@@ -27,8 +27,8 @@ see <https://github.com/pixelglow/zipzap>
 
 Thanks to this framework also images from a zipped archive can be shown, when you choose one. Cursor key control is in the manner as mentioned. The backspace key control gives you the possibility to return from displaying the zipped images and choose another sequence.
 
-Further control is possible in the menu bar with help of item "View". You can choose a built-in rudimentary slideshow function.
+Further control is possible in the menu bar with help of the "View" menu. You can choose a built-in rudimentary slideshow function.
 
-The program fills the recent documents entries under The File menu und you can use them in the normal manner.
+The program fills the recent documents entries under the "File" menu und you can use them in the normal manner.
 
 Disclaimer: Use the program for what purpose you like, but hold in mind, that I will not be responsible for any harm it will cause to your hard- or software. It was your decision to use this piece of software.
