@@ -103,7 +103,7 @@ class ViewController: NSViewController, NSWindowDelegate {
             let imageFile = ""
             imageDialog.nameFieldStringValue = imageFile
             imageDialog.directoryURL = workDirectoryURL
-            imageDialog.allowedFileTypes = ["bmp","jpg","jpeg","pdf","png","tif","tiff", "zip"]
+            imageDialog.allowedFileTypes = ["bmp","eps","jpg","jpeg","pdf","png","tif","tiff", "zip"]
             imageDialog.allowsMultipleSelection = true;
             imageDialog.canChooseDirectories = true;
             imageDialog.canCreateDirectories = false;
@@ -238,15 +238,23 @@ class ViewController: NSViewController, NSWindowDelegate {
         pageIndex = 0
         imageBitmaps = NSBitmapImageRep.imageRepsWithData(bitmapData)
         if (imageBitmaps.count == 0) {
-            // no valid bitmaps, try PDF
-            // create an image with NSCGImageSnapshotRep for every page
-            let provider = CGDataProviderCreateWithCFData(bitmapData)
-            if let document = CGPDFDocumentCreateWithProvider(provider) {
-                let count = CGPDFDocumentGetNumberOfPages(document)
-                for i in 1 ... count {
-                    if let page = CGPDFDocumentGetPage(document, i) {
-                        if let bitmap = drawPDFPageInImage(page) {
-                            imageBitmaps.append(bitmap)
+            // no valid bitmaps, first try EPS
+            if let epsImageRep = NSEPSImageRep(data: bitmapData) {
+                let boundingBox = epsImageRep.boundingBox
+                epsImageRep.pixelsWide = Int(boundingBox.width)
+                epsImageRep.pixelsHigh = Int(boundingBox.height)
+                imageBitmaps.append(epsImageRep)
+            }
+            else {
+                // next try PDF: create an image with NSCGImageSnapshotRep for every page
+                let provider = CGDataProviderCreateWithCFData(bitmapData)
+                if let document = CGPDFDocumentCreateWithProvider(provider) {
+                    let count = CGPDFDocumentGetNumberOfPages(document)
+                    for i in 1 ... count {
+                        if let page = CGPDFDocumentGetPage(document, i) {
+                            if let bitmap = drawPDFPageInImage(page) {
+                                imageBitmaps.append(bitmap)
+                            }
                         }
                     }
                 }
