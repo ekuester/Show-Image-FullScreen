@@ -32,8 +32,8 @@ class ViewController: NSViewController, NSWindowDelegate {
     var sharedDocumentController: NSDocumentController!
     var slidesTimer: NSTimer? = nil
     var showSlides = false
-    var subview: NSImageView? = nil
-    var viewFrame = NSZeroRect
+    var viewFrameOrigin: NSPoint = NSZeroPoint
+    var viewFrameSize: NSSize = NSZeroSize
     var workDirectoryURL: NSURL = NSURL()
 
     override func viewDidLoad() {
@@ -148,17 +148,16 @@ class ViewController: NSViewController, NSWindowDelegate {
         do {
             let zipData = try entry.newData()
             self.fillBitmapsWithData(zipData)
-            if let subview = imageViewWithBitmap() {
+            if (imageViewWithBitmap()) {
                 view.window!.title = (entry.fileName)
-                self.subview = subview
-                self.view.addSubview(subview)
             }
         } catch let error as NSError {
             Swift.print("Error: no valid data in \(error.domain)")
         }
     }
 
-    func fitImageIntoMainFrameRespectingAspectRatio(bitmap: NSImageRep) -> NSRect {
+// look also at <https://blog.alexseifert.com/2016/06/18/resize-an-nsimage-proportionately-in-swift/>
+    func fitImageIntoMainFrameRespectingAspectRatio(bitmap: NSImageRep) -> NSSize {
         var frameOrigin = NSZeroPoint
         var frameSize = mainFrame.size
         // calculate aspect ratios
@@ -181,15 +180,9 @@ class ViewController: NSViewController, NSWindowDelegate {
             frameOrigin.y = (frameSize.height - innerHeight) / 2.0
             frameSize.height = innerHeight
         }
-        var frameRect = NSZeroRect
-        frameRect.origin = frameOrigin
-        frameRect.size = frameSize
-        viewFrame = NSIntegralRect(frameRect)
-        if (!inFullScreen) {
-            view.window!.setFrameOrigin(viewFrame.origin)
-            view.window!.setContentSize((viewFrame.size))
-        }
-        return viewFrame
+        viewFrameOrigin = frameOrigin
+        viewFrameSize = frameSize
+        return frameSize
     }
 
     func imageViewfromURLRequest(url: NSURL) {
@@ -203,14 +196,8 @@ class ViewController: NSViewController, NSWindowDelegate {
             else {
                 dispatch_async(dispatch_get_main_queue()) {
                     self.fillBitmapsWithData(data!)
-                    if let subview = self.imageViewWithBitmap() {
-                        if (self.subview != nil) {
-                            let subviews = self.view.subviews
-                            subviews.first?.removeFromSuperviewWithoutNeedingDisplay()
-                        }
+                    if  self.imageViewWithBitmap() {
                         self.view.window!.setTitleWithRepresentedFilename(url.lastPathComponent!)
-                        self.subview = subview
-                        self.view.addSubview(subview)
                     }
                 }
             }
@@ -230,30 +217,33 @@ class ViewController: NSViewController, NSWindowDelegate {
         return image.representations.first
     }
 
-    func fillBitmapsWithData(bitmapData: NSData) {
+    func fillBitmapsWithData(graphicsData: NSData) {
         // generate representation(s) for image
         if (imageBitmaps.count > 0) {
             imageBitmaps.removeAll(keepCapacity: false)
         }
         pageIndex = 0
-        imageBitmaps = NSBitmapImageRep.imageRepsWithData(bitmapData)
+        imageBitmaps = NSBitmapImageRep.imageRepsWithData(graphicsData)
         if (imageBitmaps.count == 0) {
-            // no valid bitmaps, first try EPS
-            if let epsImageRep = NSEPSImageRep(data: bitmapData) {
-                let boundingBox = epsImageRep.boundingBox
-                epsImageRep.pixelsWide = Int(boundingBox.width)
-                epsImageRep.pixelsHigh = Int(boundingBox.height)
-                imageBitmaps.append(epsImageRep)
+            // no valid bitmaps, try EPS ( contains always only one page )
+            if let imageRep = NSEPSImageRep(data: graphicsData) {
+                let boundingBox = imageRep.boundingBox
+                imageRep.pixelsWide = Int(boundingBox.width)
+                imageRep.pixelsHigh = Int(boundingBox.height)
+                let image = NSImage()
+                image.addRepresentation(imageRep)
+                imageBitmaps.append(image.representations.first!)
             }
+            // at last try PDF
             else {
-                // next try PDF: create an image with NSCGImageSnapshotRep for every page
-                let provider = CGDataProviderCreateWithCFData(bitmapData)
+                let provider = CGDataProviderCreateWithCFData(graphicsData)
                 if let document = CGPDFDocumentCreateWithProvider(provider) {
                     let count = CGPDFDocumentGetNumberOfPages(document)
+                    // go through pages
                     for i in 1 ... count {
                         if let page = CGPDFDocumentGetPage(document, i) {
-                            if let bitmap = drawPDFPageInImage(page) {
-                                imageBitmaps.append(bitmap)
+                            if let imageRep = drawPDFPageInImage(page) {
+                                imageBitmaps.append(imageRep)
                             }
                         }
                     }
@@ -262,25 +252,31 @@ class ViewController: NSViewController, NSWindowDelegate {
         }
     }
 
-    func imageViewWithBitmap() -> NSImageView? {
+    func imageViewWithBitmap() -> Bool {
         // valid image bitmap, now look if subview contains data
-        if (subview != nil) {
-            subview?.removeFromSuperviewWithoutNeedingDisplay()
+        if (imageSubview != nil) {
+            imageSubview?.removeFromSuperviewWithoutNeedingDisplay()
         }
         if (imageBitmaps.count > 0) {
             let imageBitmap = imageBitmaps[pageIndex]
-            var imageFrame = fitImageIntoMainFrameRespectingAspectRatio(imageBitmap)
-            if (!inFullScreen) {
-                imageFrame.origin = NSZeroPoint
+            var imageFrame = NSZeroRect
+            imageFrame.size = fitImageIntoMainFrameRespectingAspectRatio(imageBitmap)
+            if (inFullScreen) {
+                imageFrame.origin = viewFrameOrigin
+            }
+            else {
+                view.window!.setFrameOrigin(viewFrameOrigin)
+                view.window!.setContentSize((viewFrameSize))
             }
             let image = NSImage()
             image.addRepresentation(imageBitmap)
-            let imageView = NSImageView(frame: imageFrame)
-            imageView.imageScaling = NSImageScaling.ScaleProportionallyUpOrDown
-            imageView.image = image
-            return imageView
+            imageSubview.frame = imageFrame
+            imageSubview.imageScaling = NSImageScaling.ScaleProportionallyUpOrDown
+            imageSubview.image = image
+            view.addSubview(imageSubview!)
+            return true
         }
-        return nil
+        return false
     }
 
     // following are the actions for menu entries
@@ -305,10 +301,7 @@ class ViewController: NSViewController, NSWindowDelegate {
             let nextIndex = pageIndex - 1
             if (nextIndex >= 0) {
                 pageIndex = nextIndex
-                subview = imageViewWithBitmap()
-                if let subview = subview {
-                    view.addSubview(subview)
-                }
+                imageViewWithBitmap()
             }
         }
     }
@@ -319,10 +312,7 @@ class ViewController: NSViewController, NSWindowDelegate {
             let nextIndex = pageIndex + 1
             if (nextIndex < imageBitmaps.count) {
                 pageIndex = nextIndex
-                subview = imageViewWithBitmap()
-                if let subview = subview {
-                    view.addSubview(subview)
-                }
+                imageViewWithBitmap()
             }
         }
     }
@@ -409,7 +399,7 @@ class ViewController: NSViewController, NSWindowDelegate {
     func windowDidEnterFullScreen(notification: NSNotification) {
         // in full screen the view must have its own origin, correct it
         if (subview != nil) {
-            subview!.frame = viewFrame
+            imageSubview!.frame.origin = viewFrameOrigin
             view.addSubview(subview!)
         }
     }
@@ -426,11 +416,11 @@ class ViewController: NSViewController, NSWindowDelegate {
         // window did exit full screen mode
         // correct wrong framesize, if during fullscreen mode
         // another image was loaded
-        if (subview != nil) {
-            subview!.setFrameOrigin(NSZeroPoint)
-            view.window!.setFrameOrigin(viewFrame.origin)
-            view.window!.setContentSize((viewFrame.size))
-            view.addSubview(subview!)
+        if (imageSubview != nil) {
+            imageSubview!.setFrameOrigin(NSZeroPoint)
+            view.window!.setFrameOrigin(viewFrameOrigin)
+            view.window!.setContentSize((viewFrameSize))
+            view.addSubview(imageSubview!)
         }
     }
 
