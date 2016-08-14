@@ -157,13 +157,10 @@ class ViewController: NSViewController, NSWindowDelegate {
     }
 
 // look also at <https://blog.alexseifert.com/2016/06/18/resize-an-nsimage-proportionately-in-swift/>
-    func fitImageIntoMainFrameRespectingAspectRatio(bitmap: NSImageRep) -> NSSize {
+    func fitImageIntoMainFrameRespectingAspectRatio(size: NSSize) -> NSSize {
         var frameOrigin = NSZeroPoint
         var frameSize = mainFrame.size
-        // calculate aspect ratios
-        // get the real imagesize in pixels
-        // look at <http://briksoftware.com/blog/?p=72>
-        let imageSize = NSMakeSize(CGFloat(bitmap.pixelsWide), CGFloat(bitmap.pixelsHigh))
+        let imageSize = size
         // calculate aspect ratios
         let mainRatio = frameSize.width / frameSize.height
         let imageRatio = imageSize.width / imageSize.height
@@ -206,15 +203,43 @@ class ViewController: NSViewController, NSWindowDelegate {
     }
 
     func drawPDFPageInImage(page: CGPDFPage) -> NSImageRep? {
-        let pageRect = CGPDFPageGetBoxRect(page, .MediaBox)
-        let image = NSImage(size: pageRect.size)
-        image.lockFocus()
-        let context = NSGraphicsContext.currentContext()?.CGContext
+        // adapted from <https://ryanbritton.com/2015/09/correctly-drawing-pdfs-in-cocoa/>
+        // Start by getting the crop box since only its contents should be drawn
+        let cropBox = CGPDFPageGetBoxRect(page, .CropBox)
+        
+        let rotationAngle = CGPDFPageGetRotationAngle(page)
+        let angleInRadians = Double(-rotationAngle) * (M_PI / 180)
+        var transform = CGAffineTransformMakeRotation(CGFloat(angleInRadians))
+        let rotatedCropRect = CGRectApplyAffineTransform(cropBox, transform);
+        
+        // Here we're figuring out the closest size we can draw the PDF at
+        // that's no larger than drawingSize
+        let bestSize = fitImageIntoMainFrameRespectingAspectRatio(rotatedCropRect.size)
+        let bestFit = CGRectMake(0.0, 0.0, bestSize.width, bestSize.height)
+        let scaleX = CGRectGetWidth(bestFit) / CGRectGetWidth(rotatedCropRect)
+        let scaleY = CGRectGetHeight(bestFit) / CGRectGetHeight(rotatedCropRect)
+        
+        let width = Int(CGRectGetWidth(bestFit))
+        let height = Int(CGRectGetHeight(bestFit))
+        let bytesPerRow = (width * 4 + 0x0000000F) & ~0x0000000F
+        //Create the drawing context
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.ByteOrder32Little.rawValue | CGImageAlphaInfo.PremultipliedFirst.rawValue
+        let context =  CGBitmapContextCreate(nil, width, height, 8, bytesPerRow, colorSpace, (bitmapInfo))
+        // Fill the background color
         CGContextSetFillColorWithColor(context, NSColor.whiteColor().CGColor)
-        CGContextFillRect(context,pageRect)
+        CGContextFillRect(context, CGRectMake(0.0, 0.0, CGFloat(width), CGFloat(height)))
+        if (scaleY > 1) {
+            // Since CGPDFPageGetDrawingTransform won't scale up, we need to do it manually
+            transform = CGAffineTransformScale(transform, scaleX, scaleY)
+        }
+        CGContextConcatCTM(context, transform)
+        // Clip the drawing to the CropBox
+        CGContextAddRect(context, cropBox)
+        CGContextClip(context);
         CGContextDrawPDFPage(context, page);
-        image.unlockFocus()
-        return image.representations.first
+        let image = CGBitmapContextCreateImage(context)
+        return NSBitmapImageRep(CGImage: image!)
     }
 
     func fillBitmapsWithData(graphicsData: NSData) {
@@ -258,9 +283,11 @@ class ViewController: NSViewController, NSWindowDelegate {
             imageSubview?.removeFromSuperviewWithoutNeedingDisplay()
         }
         if (imageBitmaps.count > 0) {
-            let imageBitmap = imageBitmaps[pageIndex]
+            // get the real imagesize in pixels
+            // look at <http://briksoftware.com/blog/?p=72>
+            let imageSize = NSMakeSize(CGFloat(imageBitmap.pixelsWide), CGFloat(imageBitmap.pixelsHigh))
             var imageFrame = NSZeroRect
-            imageFrame.size = fitImageIntoMainFrameRespectingAspectRatio(imageBitmap)
+            imageFrame.size = fitImageIntoMainFrameRespectingAspectRatio(imageSize)
             if (inFullScreen) {
                 imageFrame.origin = viewFrameOrigin
             }
