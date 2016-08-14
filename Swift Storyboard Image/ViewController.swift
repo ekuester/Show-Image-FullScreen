@@ -21,10 +21,10 @@ class ViewController: NSViewController, NSWindowDelegate {
     var previousUrlIndex = -1
     var urlIndex: Int = -1
 
-    var imageBitmaps = [NSImageRep]()
-    var imageTitle = String()
     var imageArchive: ZZArchive? = nil
+    var imageBitmaps = [NSImageRep]()
     var imageURLs = [NSURL]()
+    var imageSubview: NSImageView!
 
     var directoryURL: NSURL = NSURL()
     var inFullScreen: Bool = false
@@ -40,6 +40,10 @@ class ViewController: NSViewController, NSWindowDelegate {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
         self.view.wantsLayer = true
+        if let view = self.view.subviews.first {
+            imageSubview = view as! NSImageView
+            imageSubview.removeFromSuperviewWithoutNeedingDisplay()
+        }
         let config = NSURLSessionConfiguration.defaultSessionConfiguration()
         self.defaultSession = NSURLSession(configuration: config)
         mainFrame = NSScreen.mainScreen()?.frame
@@ -283,6 +287,7 @@ class ViewController: NSViewController, NSWindowDelegate {
             imageSubview?.removeFromSuperviewWithoutNeedingDisplay()
         }
         if (imageBitmaps.count > 0) {
+            let imageBitmap = imageBitmaps[pageIndex]
             // get the real imagesize in pixels
             // look at <http://briksoftware.com/blog/?p=72>
             let imageSize = NSMakeSize(CGFloat(imageBitmap.pixelsWide), CGFloat(imageBitmap.pixelsHigh))
@@ -417,24 +422,24 @@ class ViewController: NSViewController, NSWindowDelegate {
     // following are methods for window delegate
     func windowWillEnterFullScreen(notification: NSNotification) {
         // window will enter full screen mode
-        if (subview != nil) {
-            subview!.removeFromSuperviewWithoutNeedingDisplay()
+        if (imageSubview != nil) {
+            imageSubview!.removeFromSuperviewWithoutNeedingDisplay()
         }
         inFullScreen = true
     }
 
     func windowDidEnterFullScreen(notification: NSNotification) {
         // in full screen the view must have its own origin, correct it
-        if (subview != nil) {
+        if (imageSubview != nil) {
             imageSubview!.frame.origin = viewFrameOrigin
-            view.addSubview(subview!)
+            view.addSubview(imageSubview!)
         }
     }
 
     func windowWillExitFullScreen(notification: NSNotification) {
         // window will exit full screen mode
-        if (subview != nil) {
-            subview!.removeFromSuperviewWithoutNeedingDisplay()
+        if (imageSubview != nil) {
+            imageSubview!.removeFromSuperviewWithoutNeedingDisplay()
         }
         inFullScreen = false
     }
