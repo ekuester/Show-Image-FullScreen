@@ -3,7 +3,7 @@ Show images under OSX on full Screen
 
 Show Images of different kind under OSX
 
-Show the images in an image view optionally on full screen ( relatively spartan but working )
+Show the images in an NSImageView optionally on full screen ( relatively spartan but working )
 
 The program was written in Swift version 2.2 for Mac OS X.
 
@@ -11,7 +11,9 @@ The development environment in the moment is Xcode 7.3.1 under OS X 10.11 El Cap
 The storyboard method ( main.storyboard ) is used for coupling AppDelegate, WindowsController and ViewController together. You will find some useful methods to exchange data between these three objects. I wrote this program to become familiar with the Swift language and to get a feeling how to display images on the screen. It contains a lot of useful stuff regarding handling of windows, menus, images.
 
 Usage:
-You can choose one or more image files (including multipage TIFFs and PDF documents) from a directory, which are displayed successively. The image is manipulated so that it fits best into the main Screen.  The sequence of the shown images is controlled by the cursor keys:
+You can choose one or more image files (including EPS, multipage TIFFs and PDF documents) from a directory, which are displayed successively. The image is manipulated so that it fits best into the main Screen. 
+
+The sequence of the shown images is controlled by the cursor keys:
 
 - left : previous image
 
@@ -23,7 +25,7 @@ You can choose one or more image files (including multipage TIFFs and PDF docume
 
 There is a link in the source code to the ZipZap framework
 
-see <https://github.com/pixelglow/zipzap>
+- see <https://github.com/pixelglow/zipzap>
 
 Thanks to this framework also images from a zipped archive can be shown, when you choose one. Cursor key control is in the manner as mentioned. The backspace key control gives you the possibility to return from displaying the zipped images and choose another sequence.
 
