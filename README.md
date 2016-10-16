@@ -5,9 +5,9 @@ Show Images of different kind under OSX
 
 Show the images in an NSImageView optionally on full screen ( relatively spartan but working )
 
-The program was written in Swift version 2.2 for Mac OS X.
+The program was written first in Swift 2.2 and now changed to Swift 3 for Mac OS X.
 
-The development environment in the moment is Xcode 7.3.1 under OS X 10.11 El Capitan.
+The development environment is now is Xcode 8 under OS X 10.12 aka macOS Sierra.
 The storyboard method ( main.storyboard ) is used for coupling AppDelegate, WindowsController and ViewController together. You will find some useful methods to exchange data between these three objects. I wrote this program to become familiar with the Swift language and to get a feeling how to display images on the screen. It contains a lot of useful stuff regarding handling of windows, menus, images.
 
 Usage:

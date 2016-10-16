@@ -608,13 +608,13 @@ CA
                                         <menuItem title="Page Up" keyEquivalent="" id="m9I-dM-kpc">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
-                                                <action selector="leafUp:" target="Ady-hI-5gd" id="tIK-gK-h6Q"/>
+                                                <action selector="sheetUp:" target="Ady-hI-5gd" id="gnR-GR-zSP"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Page Down" keyEquivalent="" id="cap-X8-jHt">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>
-                                                <action selector="leafDown:" target="Ady-hI-5gd" id="GXC-qx-WmL"/>
+                                                <action selector="sheetDown:" target="Ady-hI-5gd" id="32f-iK-8nQ"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Previous Image" keyEquivalent="" id="4cx-Ui-Kef">
@@ -713,9 +713,9 @@ CA
                         <rect key="frame" x="0.0" y="0.0" width="640" height="480"/>
                         <autoresizingMask key="autoresizingMask"/>
                         <subviews>
-                            <imageView horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="zz1-lx-Z6D">
+                            <imageView horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="e54-sy-FuU">
                                 <rect key="frame" x="0.0" y="0.0" width="640" height="480"/>
-                                <imageCell key="cell" refusesFirstResponder="YES" alignment="left" imageScaling="proportionallyDown" id="BIJ-hN-LOf"/>
+                                <imageCell key="cell" refusesFirstResponder="YES" alignment="left" imageScaling="proportionallyDown" id="31t-cb-Oj4"/>
                             </imageView>
                         </subviews>
                     </view>

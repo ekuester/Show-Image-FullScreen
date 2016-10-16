@@ -9,11 +9,27 @@
 //
 
 import Cocoa
+import Foundation
 import ZipZap
+
+// before the latest Swift 3, you could compare optional values
+// Swift migrator solves that problem by providing a custom < operator
+// which takes two optional operands and therefore "restores" the old behavior.
+fileprivate func < <T : Comparable>(lhs: T?, rhs: T?) -> Bool {
+  switch (lhs, rhs) {
+  case let (l?, r?):
+    return l < r
+  case (nil, _?):
+    return true
+  default:
+    return false
+  }
+}
+
 
 class ViewController: NSViewController, NSWindowDelegate {
 
-    var defaultSession: NSURLSession!
+    var defaultSession: URLSession!
 
     var closeZIPItem: NSMenuItem!
     var entryIndex: Int = -1
@@ -23,18 +39,20 @@ class ViewController: NSViewController, NSWindowDelegate {
 
     var imageArchive: ZZArchive? = nil
     var imageBitmaps = [NSImageRep]()
-    var imageURLs = [NSURL]()
+    var imageURLs = [URL]()
     var imageSubview: NSImageView!
 
-    var directoryURL: NSURL = NSURL()
+    var directoryURL: URL!
     var inFullScreen: Bool = false
     var mainFrame: NSRect!
     var sharedDocumentController: NSDocumentController!
-    var slidesTimer: NSTimer? = nil
+    var slidesTimer: Timer? = nil
     var showSlides = false
+    //    var subview: NSImageView? = nil
+    //    var viewFrame = NSZeroRect
     var viewFrameOrigin: NSPoint = NSZeroPoint
     var viewFrameSize: NSSize = NSZeroSize
-    var workDirectoryURL: NSURL = NSURL()
+    var workDirectoryURL: URL!
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -44,58 +62,41 @@ class ViewController: NSViewController, NSWindowDelegate {
             imageSubview = view as! NSImageView
             imageSubview.removeFromSuperviewWithoutNeedingDisplay()
         }
-        let config = NSURLSessionConfiguration.defaultSessionConfiguration()
-        self.defaultSession = NSURLSession(configuration: config)
-        mainFrame = NSScreen.mainScreen()?.frame
+        let config = URLSessionConfiguration.default
+        self.defaultSession = URLSession(configuration: config)
+        mainFrame = NSScreen.main()?.frame
         // find menu item "Close ZIP"
-        let fileMenu = NSApp.mainMenu!.itemWithTitle("File")
-        let fileMenuItems = fileMenu?.submenu?.itemArray
+        let fileMenu = NSApp.mainMenu!.item(withTitle: "File")
+        let fileMenuItems = fileMenu?.submenu?.items
         for item in fileMenuItems! {
             if (item.title == "Close ZIP") {
                 closeZIPItem = item
             }
         }
-        let presentationOptions: NSApplicationPresentationOptions = [.HideDock, .AutoHideMenuBar]
+        let presentationOptions: NSApplicationPresentationOptions = [.hideDock, .autoHideMenuBar]
         NSApp.presentationOptions = NSApplicationPresentationOptions(rawValue: presentationOptions.rawValue)
-        sharedDocumentController = NSDocumentController.sharedDocumentController()
-        // notification if file from recent document should be opened
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(ViewController.openData(_:)), name: "com.image.openfile", object: nil)
+        sharedDocumentController = NSDocumentController.shared()
+        // set user's directory as starting point of search
+        let userDirectoryPath: NSString = "~"
+        let userDirectoryURL = URL(fileURLWithPath: userDirectoryPath.expandingTildeInPath)
+        workDirectoryURL = userDirectoryURL.appendingPathComponent("Pictures", isDirectory: true)
+        // notification if file from recent documents should be opened
+        NotificationCenter.default.addObserver(self, selector: #selector(ViewController.openData(_:)), name: NSNotification.Name(rawValue: "com.image.openfile"), object: nil)
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        view.layer?.backgroundColor = NSColor.blackColor().CGColor
+        view.layer?.backgroundColor = NSColor.black.cgColor
         // now window exists
         view.window!.delegate = self
         processImages()
     }
 
-    override var representedObject: AnyObject? {
+    override var representedObject: Any? {
         didSet {
             // Update the view, if already loaded.
             Swift.print("inside didSet of representedObject")
         }
-    }
-
-    func openImageDialog() -> [NSURL] {
-        // generate File Open Dialog class
-        let openDlg:NSOpenPanel = NSOpenPanel()
-        openDlg.title = NSLocalizedString("Select image file", comment: "title of openPanel")
-        let imageFile = ""
-        openDlg.nameFieldStringValue = imageFile
-        openDlg.directoryURL = workDirectoryURL
-        openDlg.allowedFileTypes = ["bmp","jpg","jpeg","png","tif","tiff", "zip"]
-        openDlg.allowsMultipleSelection = true;
-        openDlg.canChooseDirectories = true;
-        openDlg.canCreateDirectories = false;
-        openDlg.canChooseFiles = true;
-        if (openDlg.runModal() == NSFileHandlingPanelOKButton) {
-            // OK
-            workDirectoryURL = (openDlg.URL?.URLByDeletingLastPathComponent)!
-            return openDlg.URLs
-        }
-        Swift.print("Cancel Button pressed")
-        return [NSURL]()
     }
 
     func processImages() {
@@ -112,12 +113,12 @@ class ViewController: NSViewController, NSWindowDelegate {
             imageDialog.canChooseDirectories = true;
             imageDialog.canCreateDirectories = false;
             imageDialog.canChooseFiles = true;
-            imageDialog.beginSheetModalForWindow(view.window!, completionHandler: { response in
+            imageDialog.beginSheetModal(for: view.window!, completionHandler: { response in
                 if response == NSFileHandlingPanelOKButton {
                     // NSFileHandlingPanelOKButton is Int(1)
                     self.urlIndex = 0
-                    self.workDirectoryURL = (imageDialog.URL?.URLByDeletingLastPathComponent)!
-                    self.imageURLs = imageDialog.URLs
+                    self.workDirectoryURL = (imageDialog.url?.deletingLastPathComponent())!
+                    self.imageURLs = imageDialog.urls
                     self.processImages()
                 }
             })
@@ -126,23 +127,22 @@ class ViewController: NSViewController, NSWindowDelegate {
             // process images from existing URL(s)
             let actualURL = imageURLs[urlIndex]
             sharedDocumentController.noteNewRecentDocumentURL(actualURL)
-            if let fileType = actualURL.pathExtension {
-                switch fileType {
-                case "zip":
-                    // valid URL decodes zip file
-                    do {
-                        entryIndex = 0
-                        imageArchive = try ZZArchive(URL: actualURL)
-                        closeZIPItem.enabled = true
-                        imageViewWithArchiveEntry()
-                    } catch let error as NSError {
-                        entryIndex = -1
-                        Swift.print("ZipZap error: could not open archive in \(error.domain)")
-                    }
-                default:
-                    previousUrlIndex = urlIndex
-                    imageViewfromURLRequest(actualURL)
+            let fileType = actualURL.pathExtension
+            switch fileType {
+            case "zip":
+                // valid URL decodes zip file
+                do {
+                    entryIndex = 0
+                    imageArchive = try ZZArchive(url: actualURL)
+                    closeZIPItem.isEnabled = true
+                    imageViewWithArchiveEntry()
+                } catch let error as NSError {
+                    entryIndex = -1
+                    Swift.print("ZipZap error: could not open archive in \(error.domain)")
                 }
+            default:
+                previousUrlIndex = urlIndex
+                imageViewfromURLRequest(actualURL)
             }
         }
     }
@@ -154,6 +154,8 @@ class ViewController: NSViewController, NSWindowDelegate {
             self.fillBitmapsWithData(zipData)
             if (imageViewWithBitmap()) {
                 view.window!.title = (entry.fileName)
+//                self.subview = subview
+//                self.view.addSubview(subview)
             }
         } catch let error as NSError {
             Swift.print("Error: no valid data in \(error.domain)")
@@ -161,9 +163,10 @@ class ViewController: NSViewController, NSWindowDelegate {
     }
 
 // look also at <https://blog.alexseifert.com/2016/06/18/resize-an-nsimage-proportionately-in-swift/>
-    func fitImageIntoMainFrameRespectingAspectRatio(size: NSSize) -> NSSize {
+    func fitImageIntoMainFrameRespectingAspectRatio(_ size: NSSize) -> NSSize {
         var frameOrigin = NSZeroPoint
         var frameSize = mainFrame.size
+        // calculate aspect ratios
         let imageSize = size
         // calculate aspect ratios
         let mainRatio = frameSize.width / frameSize.height
@@ -186,19 +189,19 @@ class ViewController: NSViewController, NSWindowDelegate {
         return frameSize
     }
 
-    func imageViewfromURLRequest(url: NSURL) {
-        let urlRequest: NSURLRequest = NSURLRequest(URL: url)
-        let task = defaultSession.dataTaskWithRequest(urlRequest, completionHandler: {
-            (data: NSData?, response: NSURLResponse?, error: NSError?) -> Void in
+    func imageViewfromURLRequest(_ url: URL) {
+        let urlRequest: URLRequest = URLRequest(url: url)
+        let task = defaultSession.dataTask(with: urlRequest, completionHandler: {
+            (data: Data?, response: URLResponse?, error: Error?) -> Void in
             if error != nil {
-                Swift.print("error from data task: \(error!.localizedDescription) in \(error!.domain)")
+                Swift.print("error from data task: \(error!.localizedDescription) in \((error as! NSError).domain)")
                 return
             }
             else {
-                dispatch_async(dispatch_get_main_queue()) {
+                DispatchQueue.main.async {
                     self.fillBitmapsWithData(data!)
-                    if  self.imageViewWithBitmap() {
-                        self.view.window!.setTitleWithRepresentedFilename(url.lastPathComponent!)
+                    if (self.imageViewWithBitmap()) {
+                        self.view.window!.setTitleWithRepresentedFilename(url.lastPathComponent)
                     }
                 }
             }
@@ -206,74 +209,89 @@ class ViewController: NSViewController, NSWindowDelegate {
         task.resume()
     }
 
-    func drawPDFPageInImage(page: CGPDFPage) -> NSImageRep? {
+    func drawPDFPageInImage(_ page: CGPDFPage) -> NSImageRep? {
         // adapted from <https://ryanbritton.com/2015/09/correctly-drawing-pdfs-in-cocoa/>
         // Start by getting the crop box since only its contents should be drawn
-        let cropBox = CGPDFPageGetBoxRect(page, .CropBox)
-        
-        let rotationAngle = CGPDFPageGetRotationAngle(page)
+        let cropBox = page.getBoxRect(.cropBox)
+        let rotationAngle = page.rotationAngle
         let angleInRadians = Double(-rotationAngle) * (M_PI / 180)
-        var transform = CGAffineTransformMakeRotation(CGFloat(angleInRadians))
-        let rotatedCropRect = CGRectApplyAffineTransform(cropBox, transform);
-        
-        // Here we're figuring out the closest size we can draw the PDF at
+        var transform = CGAffineTransform(rotationAngle: CGFloat(angleInRadians))
+        let rotatedCropRect = cropBox.applying(transform);
+        // we set manually the size scaled by 300 / 72 dpi
+        let scale = CGFloat(4.1667)
+        // instead of figuring out the closest size we can draw the PDF at
         // that's no larger than drawingSize
-        let bestSize = fitImageIntoMainFrameRespectingAspectRatio(rotatedCropRect.size)
-        let bestFit = CGRectMake(0.0, 0.0, bestSize.width, bestSize.height)
-        let scaleX = CGRectGetWidth(bestFit) / CGRectGetWidth(rotatedCropRect)
-        let scaleY = CGRectGetHeight(bestFit) / CGRectGetHeight(rotatedCropRect)
+        //let bestSize = fitImageIntoMainFrameRespectingAspectRatio(rotatedCropRect.size)
+        let bestSize = CGSize(width: cropBox.width*scale, height: cropBox.height*scale)
+        let bestFit = CGRect(x: 0.0, y: 0.0, width: bestSize.width, height: bestSize.height)
+        let scaleX = bestFit.width / rotatedCropRect.width
+        let scaleY = bestFit.height / rotatedCropRect.height
         
-        let width = Int(CGRectGetWidth(bestFit))
-        let height = Int(CGRectGetHeight(bestFit))
+        let width = Int(bestFit.width)
+        let height = Int(bestFit.height)
         let bytesPerRow = (width * 4 + 0x0000000F) & ~0x0000000F
         //Create the drawing context
         let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo.ByteOrder32Little.rawValue | CGImageAlphaInfo.PremultipliedFirst.rawValue
-        let context =  CGBitmapContextCreate(nil, width, height, 8, bytesPerRow, colorSpace, (bitmapInfo))
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+        let context =  CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: (bitmapInfo))
         // Fill the background color
-        CGContextSetFillColorWithColor(context, NSColor.whiteColor().CGColor)
-        CGContextFillRect(context, CGRectMake(0.0, 0.0, CGFloat(width), CGFloat(height)))
+        context?.setFillColor(NSColor.white.cgColor)
+        context?.fill(CGRect(x: 0.0, y: 0.0, width: CGFloat(width), height: CGFloat(height)))
+        
         if (scaleY > 1) {
             // Since CGPDFPageGetDrawingTransform won't scale up, we need to do it manually
-            transform = CGAffineTransformScale(transform, scaleX, scaleY)
+            transform = transform.scaledBy(x: scaleX, y: scaleY)
         }
-        CGContextConcatCTM(context, transform)
+        
+        context?.concatenate(transform)
+        
         // Clip the drawing to the CropBox
-        CGContextAddRect(context, cropBox)
-        CGContextClip(context);
-        CGContextDrawPDFPage(context, page);
-        let image = CGBitmapContextCreateImage(context)
-        return NSBitmapImageRep(CGImage: image!)
+        context?.addRect(cropBox)
+        context?.clip();
+        
+        context?.drawPDFPage(page);
+        
+        let image = context?.makeImage()
+        return NSBitmapImageRep(cgImage: image!)
     }
 
-    func fillBitmapsWithData(graphicsData: NSData) {
+    func fillBitmapsWithData(_ graphicsData: Data) {
         // generate representation(s) for image
         if (imageBitmaps.count > 0) {
-            imageBitmaps.removeAll(keepCapacity: false)
+            imageBitmaps.removeAll(keepingCapacity: false)
         }
         pageIndex = 0
-        imageBitmaps = NSBitmapImageRep.imageRepsWithData(graphicsData)
+        imageBitmaps = NSBitmapImageRep.imageReps(with: graphicsData)
         if (imageBitmaps.count == 0) {
             // no valid bitmaps, try EPS ( contains always only one page )
-            if let imageRep = NSEPSImageRep(data: graphicsData) {
-                let boundingBox = imageRep.boundingBox
-                imageRep.pixelsWide = Int(boundingBox.width)
-                imageRep.pixelsHigh = Int(boundingBox.height)
-                let image = NSImage()
-                image.addRepresentation(imageRep)
-                imageBitmaps.append(image.representations.first!)
+            if (NSEPSImageRep(data: graphicsData) != nil) {
+                var pdfData = NSMutableData()
+                let provider = CGDataProvider(data: graphicsData as CFData)
+                let consumer = CGDataConsumer(data: pdfData as CFMutableData)
+                var callbacks = CGPSConverterCallbacks()
+                let converter = CGPSConverter(info: nil, callbacks: &callbacks, options: [:] as CFDictionary)
+                let converted = converter!.convert(provider!, consumer: consumer!, options: [:] as CFDictionary)
+                let pdfProvider = CGDataProvider(data: pdfData as CFData)
+                let document = CGPDFDocument(pdfProvider!)
+                // EPS contains always only one page
+                if let page = document?.page(at: 1) {
+                    if let imageRep = drawPDFPageInImage(page) {
+                        imageBitmaps.append(imageRep)
+                    }
+                }
             }
-            // at last try PDF
+            // at last translate PDFImageRep to BitmapImageRep if possible
             else {
-                let provider = CGDataProviderCreateWithCFData(graphicsData)
-                if let document = CGPDFDocumentCreateWithProvider(provider) {
-                    let count = CGPDFDocumentGetNumberOfPages(document)
-                    // go through pages
-                    for i in 1 ... count {
-                        if let page = CGPDFDocumentGetPage(document, i) {
-                            if let imageRep = drawPDFPageInImage(page) {
-                                imageBitmaps.append(imageRep)
-                            }
+                let provider = CGDataProvider(data: graphicsData as CFData)
+                guard let document = CGPDFDocument(provider!) else {
+                    return
+                }
+                let count = document.numberOfPages
+                // go through pages
+                for i in 1 ... count {
+                    if let page = document.page(at: i) {
+                        if let imageRep = drawPDFPageInImage(page) {
+                            imageBitmaps.append(imageRep)
                         }
                     }
                 }
@@ -303,7 +321,7 @@ class ViewController: NSViewController, NSWindowDelegate {
             let image = NSImage()
             image.addRepresentation(imageBitmap)
             imageSubview.frame = imageFrame
-            imageSubview.imageScaling = NSImageScaling.ScaleProportionallyUpOrDown
+            imageSubview.imageScaling = NSImageScaling.scaleProportionallyUpOrDown
             imageSubview.image = image
             view.addSubview(imageSubview!)
             return true
@@ -312,44 +330,52 @@ class ViewController: NSViewController, NSWindowDelegate {
     }
 
     // following are the actions for menu entries
-    @IBAction func openDocument(sender: NSMenuItem) {
+    @IBAction func openDocument(_ sender: NSMenuItem) {
         // open new file(s)
         entryIndex = -1
         urlIndex = -1
         processImages()
     }
 
-    @IBAction func closeZIP(sender: NSMenuItem) {
+    @IBAction func closeZIP(_ sender: NSMenuItem) {
         // return from zipped images
-        sender.enabled = false
+        sender.isEnabled = false
         entryIndex = -1
-        urlIndex = -1
+        urlIndex = previousUrlIndex
         processImages()
     }
 
-    @IBAction func leafUp(sender: NSMenuItem) {
+    @IBAction func sheetUp(_ sender: NSMenuItem) {
         // show page up
         if (!imageBitmaps.isEmpty) {
             let nextIndex = pageIndex - 1
             if (nextIndex >= 0) {
                 pageIndex = nextIndex
                 imageViewWithBitmap()
+/*                subview = imageViewWithBitmap()
+                 if let subview = subview {
+                 view.addSubview(subview)
+                 } */
             }
         }
     }
 
-    @IBAction func leafDown(sender: NSMenuItem) {
+    @IBAction func sheetDown(_ sender: NSMenuItem) {
         // show page down
         if (imageBitmaps.count > 1) {
             let nextIndex = pageIndex + 1
             if (nextIndex < imageBitmaps.count) {
                 pageIndex = nextIndex
                 imageViewWithBitmap()
+/*                subview = imageViewWithBitmap()
+                if let subview = subview {
+                    view.addSubview(subview)
+                } */
             }
         }
     }
 
-    @IBAction func previousImage(sender: NSMenuItem) {
+    @IBAction func previousImage(_ sender: NSMenuItem) {
         // show previous image
         if (entryIndex >= 0) {
             // display previous image of entry in zip archive
@@ -371,7 +397,7 @@ class ViewController: NSViewController, NSWindowDelegate {
         }
     }
     
-    @IBAction func nextImage(sender: AnyObject) {
+    @IBAction func nextImage(_ sender: AnyObject) {
         // show next image
         if (entryIndex >= 0) {
             // display next image from zip entry
@@ -393,7 +419,7 @@ class ViewController: NSViewController, NSWindowDelegate {
         }
     }
 
-    @IBAction func slideShow(sender: NSMenuItem) {
+    @IBAction func slideShow(_ sender: NSMenuItem) {
         // start slide show, yes or no
         let item = sender
         if (showSlides) {
@@ -404,23 +430,23 @@ class ViewController: NSViewController, NSWindowDelegate {
         else {
             item.state = NSOnState
             showSlides = true
-            slidesTimer = NSTimer.scheduledTimerWithTimeInterval(3, target: self, selector: #selector(nextImage(_:)), userInfo: nil, repeats: true)
+            slidesTimer = Timer.scheduledTimer(timeInterval: 3, target: self, selector: #selector(nextImage(_:)), userInfo: nil, repeats: true)
         }
     }
-// look at <https://www.brandpending.com/2016/02/21/opening-and-saving-custom-document-types-from-a-swift-cocoa-application/>
-// notification from AppDelegate
-    func openData(notification: NSNotification) {
+
+    // notification from AppDelegate
+	// see <https://www.brandpending.com/2016/02/21/opening-and-saving-custom-document-types-from-a-swift-cocoa-application/>
+    func openData(_ notification: Notification) {
         // invoked when an item of recent documents is clicked
-        Swift.print("object: \(notification.object)")
-        if let fileURL = notification.object as? NSURL {
+        if let fileURL = notification.object as? URL {
             urlIndex += 1
-            imageURLs.insert(fileURL, atIndex: urlIndex)
+            imageURLs.insert(fileURL, at: urlIndex)
             processImages()
         }
     }
 
     // following are methods for window delegate
-    func windowWillEnterFullScreen(notification: NSNotification) {
+    func windowWillEnterFullScreen(_ notification: Notification) {
         // window will enter full screen mode
         if (imageSubview != nil) {
             imageSubview!.removeFromSuperviewWithoutNeedingDisplay()
@@ -428,7 +454,7 @@ class ViewController: NSViewController, NSWindowDelegate {
         inFullScreen = true
     }
 
-    func windowDidEnterFullScreen(notification: NSNotification) {
+    func windowDidEnterFullScreen(_ notification: Notification) {
         // in full screen the view must have its own origin, correct it
         if (imageSubview != nil) {
             imageSubview!.frame.origin = viewFrameOrigin
@@ -436,7 +462,7 @@ class ViewController: NSViewController, NSWindowDelegate {
         }
     }
 
-    func windowWillExitFullScreen(notification: NSNotification) {
+    func windowWillExitFullScreen(_ notification: Notification) {
         // window will exit full screen mode
         if (imageSubview != nil) {
             imageSubview!.removeFromSuperviewWithoutNeedingDisplay()
@@ -444,7 +470,7 @@ class ViewController: NSViewController, NSWindowDelegate {
         inFullScreen = false
     }
 
-    func windowDidExitFullScreen(notification: NSNotification) {
+    func windowDidExitFullScreen(_ notification: Notification) {
         // window did exit full screen mode
         // correct wrong framesize, if during fullscreen mode
         // another image was loaded

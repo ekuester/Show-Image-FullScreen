@@ -13,24 +13,25 @@ import Cocoa
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
 
-    func applicationDidFinishLaunching(aNotification: NSNotification) {
+    func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Insert code here to initialize your application
     }
 
-    func applicationWillTerminate(aNotification: NSNotification) {
+    func applicationWillTerminate(_ aNotification: Notification) {
         // Insert code here to tear down your application
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(sender: NSApplication) -> Bool {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // application should terminate
         return true
     }
 
     // look at <https://www.brandpending.com/2016/02/21/opening-and-saving-custom-document-types-from-a-swift-cocoa-application/>
-    func application(sender: NSApplication, openFile filename: String) -> Bool {
+    // Swift 3 migrator changed a little
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
         // invoked when an item of recent documents is clicked
-        let fileURL = NSURL(fileURLWithPath: filename)
-        NSNotificationCenter.defaultCenter().postNotificationName("com.image.openfile", object: fileURL)
+        let fileURL = URL(fileURLWithPath: filename)
+        NotificationCenter.default.post(name: Notification.Name(rawValue: "com.image.openfile"), object: fileURL)
         return true
     }
     
