@@ -14,16 +14,16 @@ import ZipZap
 
 // before the latest Swift 3, you could compare optional values
 // Swift migrator solves that problem by providing a custom < operator
-// which takes two optional operands and therefore "restores" the old behavior.
+//which takes two optional operands and therefore "restores" the old behavior.
 fileprivate func < <T : Comparable>(lhs: T?, rhs: T?) -> Bool {
-  switch (lhs, rhs) {
-  case let (l?, r?):
-    return l < r
-  case (nil, _?):
-    return true
-  default:
-    return false
-  }
+    switch (lhs, rhs) {
+    case let (l?, r?):
+        return l < r
+    case (nil, _?):
+        return true
+    default:
+        return false
+    }
 }
 
 
@@ -43,16 +43,16 @@ class ViewController: NSViewController, NSWindowDelegate {
     var imageSubview: NSImageView!
 
     var directoryURL: URL!
+    var recentItemsObserver: NSObjectProtocol!
     var inFullScreen: Bool = false
     var mainFrame: NSRect!
     var sharedDocumentController: NSDocumentController!
     var slidesTimer: Timer? = nil
     var showSlides = false
-    //    var subview: NSImageView? = nil
-    //    var viewFrame = NSZeroRect
     var viewFrameOrigin: NSPoint = NSZeroPoint
     var viewFrameSize: NSSize = NSZeroSize
     var workDirectoryURL: URL!
+    var zipIsOpen: Bool = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -81,7 +81,7 @@ class ViewController: NSViewController, NSWindowDelegate {
         let userDirectoryURL = URL(fileURLWithPath: userDirectoryPath.expandingTildeInPath)
         workDirectoryURL = userDirectoryURL.appendingPathComponent("Pictures", isDirectory: true)
         // notification if file from recent documents should be opened
-        NotificationCenter.default.addObserver(self, selector: #selector(ViewController.openData(_:)), name: NSNotification.Name(rawValue: "com.image.openfile"), object: nil)
+        recentItemsObserver = NotificationCenter.default.addObserver(forName: Notification.Name(rawValue: "com.image.openfile"), object: nil, queue: nil, using: openData)
     }
 
     override func viewDidAppear() {
@@ -99,6 +99,10 @@ class ViewController: NSViewController, NSWindowDelegate {
         }
     }
 
+    override func viewDidDisappear() {
+        NotificationCenter.default.removeObserver(recentItemsObserver)
+    }
+
     func processImages() {
         if (urlIndex < 0) {
             // load new images from NSOpenPanel
@@ -110,7 +114,7 @@ class ViewController: NSViewController, NSWindowDelegate {
             imageDialog.directoryURL = workDirectoryURL
             imageDialog.allowedFileTypes = ["bmp","eps","jpg","jpeg","pdf","png","tif","tiff", "zip"]
             imageDialog.allowsMultipleSelection = true;
-            imageDialog.canChooseDirectories = true;
+            imageDialog.canChooseDirectories = false;
             imageDialog.canCreateDirectories = false;
             imageDialog.canChooseFiles = true;
             imageDialog.beginSheetModal(for: view.window!, completionHandler: { response in
@@ -118,12 +122,19 @@ class ViewController: NSViewController, NSWindowDelegate {
                     // NSFileHandlingPanelOKButton is Int(1)
                     self.urlIndex = 0
                     self.workDirectoryURL = (imageDialog.url?.deletingLastPathComponent())!
+                    self.zipIsOpen = false
                     self.imageURLs = imageDialog.urls
                     self.processImages()
                 }
+//                self.urlIndex = self.previousUrlIndex
             })
         }
         if (urlIndex >= 0) {
+            previousUrlIndex = urlIndex
+            if zipIsOpen {
+                imageViewWithArchiveEntry()
+                return
+            }
             // process images from existing URL(s)
             let actualURL = imageURLs[urlIndex]
             sharedDocumentController.noteNewRecentDocumentURL(actualURL)
@@ -135,13 +146,13 @@ class ViewController: NSViewController, NSWindowDelegate {
                     entryIndex = 0
                     imageArchive = try ZZArchive(url: actualURL)
                     closeZIPItem.isEnabled = true
+                    zipIsOpen = true
                     imageViewWithArchiveEntry()
                 } catch let error as NSError {
                     entryIndex = -1
                     Swift.print("ZipZap error: could not open archive in \(error.domain)")
                 }
             default:
-                previousUrlIndex = urlIndex
                 imageViewfromURLRequest(actualURL)
             }
         }
@@ -154,8 +165,6 @@ class ViewController: NSViewController, NSWindowDelegate {
             self.fillBitmapsWithData(zipData)
             if (imageViewWithBitmap()) {
                 view.window!.title = (entry.fileName)
-//                self.subview = subview
-//                self.view.addSubview(subview)
             }
         } catch let error as NSError {
             Swift.print("Error: no valid data in \(error.domain)")
@@ -201,11 +210,12 @@ class ViewController: NSViewController, NSWindowDelegate {
                 DispatchQueue.main.async {
                     self.fillBitmapsWithData(data!)
                     if (self.imageViewWithBitmap()) {
+
                         self.view.window!.setTitleWithRepresentedFilename(url.lastPathComponent)
                     }
                 }
             }
-        })
+        }) // as! (Data?, URLResponse?, Error?) -> Void)
         task.resume()
     }
 
@@ -213,6 +223,7 @@ class ViewController: NSViewController, NSWindowDelegate {
         // adapted from <https://ryanbritton.com/2015/09/correctly-drawing-pdfs-in-cocoa/>
         // Start by getting the crop box since only its contents should be drawn
         let cropBox = page.getBoxRect(.cropBox)
+        
         let rotationAngle = page.rotationAngle
         let angleInRadians = Double(-rotationAngle) * (M_PI / 180)
         var transform = CGAffineTransform(rotationAngle: CGFloat(angleInRadians))
@@ -279,6 +290,14 @@ class ViewController: NSViewController, NSWindowDelegate {
                         imageBitmaps.append(imageRep)
                     }
                 }
+/*                let boundingBox = imageRep.boundingBox
+                // scale by 300 / 72 dpi = 4.16...
+                let scale = CGFloat(4.1667)
+                imageRep.pixelsWide = Int(boundingBox.width * scale)
+                imageRep.pixelsHigh = Int(boundingBox.height * scale)
+                let image = NSImage()
+                image.addRepresentation(imageRep)
+                imageBitmaps.append(image.representations.first!) */
             }
             // at last translate PDFImageRep to BitmapImageRep if possible
             else {
@@ -332,7 +351,7 @@ class ViewController: NSViewController, NSWindowDelegate {
     // following are the actions for menu entries
     @IBAction func openDocument(_ sender: NSMenuItem) {
         // open new file(s)
-        entryIndex = -1
+//        entryIndex = -1
         urlIndex = -1
         processImages()
     }
@@ -341,7 +360,9 @@ class ViewController: NSViewController, NSWindowDelegate {
         // return from zipped images
         sender.isEnabled = false
         entryIndex = -1
-        urlIndex = previousUrlIndex
+        imageURLs.remove(at: urlIndex)
+        urlIndex -= 1
+        zipIsOpen = false
         processImages()
     }
 
@@ -352,10 +373,6 @@ class ViewController: NSViewController, NSWindowDelegate {
             if (nextIndex >= 0) {
                 pageIndex = nextIndex
                 imageViewWithBitmap()
-/*                subview = imageViewWithBitmap()
-                 if let subview = subview {
-                 view.addSubview(subview)
-                 } */
             }
         }
     }
@@ -367,17 +384,13 @@ class ViewController: NSViewController, NSWindowDelegate {
             if (nextIndex < imageBitmaps.count) {
                 pageIndex = nextIndex
                 imageViewWithBitmap()
-/*                subview = imageViewWithBitmap()
-                if let subview = subview {
-                    view.addSubview(subview)
-                } */
             }
         }
     }
 
     @IBAction func previousImage(_ sender: NSMenuItem) {
         // show previous image
-        if (entryIndex >= 0) {
+        if zipIsOpen {
             // display previous image of entry in zip archive
             let nextIndex = entryIndex - 1
             if (nextIndex >= 0) {
@@ -399,7 +412,7 @@ class ViewController: NSViewController, NSWindowDelegate {
     
     @IBAction func nextImage(_ sender: AnyObject) {
         // show next image
-        if (entryIndex >= 0) {
+        if zipIsOpen {
             // display next image from zip entry
             let nextindex = entryIndex + 1
             if (nextindex < imageArchive?.entries.count) {
@@ -434,8 +447,8 @@ class ViewController: NSViewController, NSWindowDelegate {
         }
     }
 
+// look at <https://www.brandpending.com/2016/02/21/opening-and-saving-custom-document-types-from-a-swift-cocoa-application/>
     // notification from AppDelegate
-	// see <https://www.brandpending.com/2016/02/21/opening-and-saving-custom-document-types-from-a-swift-cocoa-application/>
     func openData(_ notification: Notification) {
         // invoked when an item of recent documents is clicked
         if let fileURL = notification.object as? URL {
